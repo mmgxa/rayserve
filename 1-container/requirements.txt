@@ -1,0 +1,4 @@
+ray[serve]==2.24.0
+requests==2.32.3
+huggingface_hub[cli]==0.23.3
+hf_transfer==0.1.6

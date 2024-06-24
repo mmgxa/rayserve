@@ -1,0 +1,77 @@
+apiVersion: ray.io/v1alpha1
+kind: RayService
+metadata:
+  name: rayservice-llm
+spec:
+  serviceUnhealthySecondThreshold: 1200
+  deploymentUnhealthySecondThreshold: 1200
+  serveConfigV2: |
+    applications:
+      - name: llm
+        import_path: main:build_app
+        route_prefix: /
+        args:
+          model: "google/gemma-2b-it"
+          dtype: float16
+  rayClusterConfig:
+    rayVersion: "2.24.0" # Should match Ray version in the containers
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        resources: '"{\"accelerator_type_cpu\": 2}"'
+        block: "true"
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: vllm_openaai:ray
+              resources:
+                limits:
+                  cpu: 2
+                  memory: 2Gi
+                requests:
+                  cpu: 2
+                  memory: 2Gi
+              ports:
+                - containerPort: 6379
+                  name: gcs-server
+                - containerPort: 8265 # Ray dashboard
+                  name: dashboard
+                - containerPort: 10001
+                  name: client
+                - containerPort: 8000
+                  name: serve
+    workerGroupSpecs:
+      - replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+        groupName: gpu-group
+        rayStartParams:
+          block: "true"
+          resources: '"{\"accelerator_type_cpu\": 4, \"accelerator_type_l4\": 1}"'
+        template:
+          spec:
+            containers:
+              - name: ray-worker
+                image: vllm_openaai:ray
+                volumeMounts:
+                  - mountPath: /dev/shm
+                    name: dshm
+                lifecycle:
+                  preStop:
+                    exec:
+                      command: ["/bin/sh", "-c", "ray stop"]
+                resources:
+                  limits:
+                    cpu: "4"
+                    memory: "16Gi"
+                    nvidia.com/gpu: "1"
+                  requests:
+                    cpu: "4"
+                    memory: "16Gi"
+                    nvidia.com/gpu: "1"
+            volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: 2Gi
